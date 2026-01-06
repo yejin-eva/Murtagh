@@ -20,8 +20,7 @@ namespace Murtagh.Editor
         {
             GetSerializedProperties(ref _serializedProperties);
 
-            bool anyMurtaghAttribute =
-                _serializedProperties.Any(p => PropertyUtility.GetAttribute<IMurtaghAttribute>(p) != null);
+            bool anyMurtaghAttribute = HasAnyMurtaghAttribute(_serializedProperties);
 
             if (!anyMurtaghAttribute)
             {
@@ -31,6 +30,37 @@ namespace Murtagh.Editor
             {
                 DrawSerializedProperties();
             }
+        }
+
+        private bool HasAnyMurtaghAttribute(List<SerializedProperty> properties)
+        {
+            foreach (var property in properties)
+            {
+                // Check top-level
+                if (PropertyUtility.GetAttribute<IMurtaghAttribute>(property) != null)
+                    return true;
+
+                // Check nested children (for arrays and nested classes)
+                if (property.hasVisibleChildren)
+                {
+                    var iterator = property.Copy();
+                    var endProperty = property.GetEndProperty();
+
+                    if (iterator.NextVisible(true))
+                    {
+                        do
+                        {
+                            if (SerializedProperty.EqualContents(iterator, endProperty))
+                                break;
+
+                            if (PropertyUtility.GetAttribute<IMurtaghAttribute>(iterator) != null)
+                                return true;
+
+                        } while (iterator.NextVisible(true));
+                    }
+                }
+            }
+            return false;
         }
 
         protected void GetSerializedProperties(ref List<SerializedProperty> outSerializedProperties)
