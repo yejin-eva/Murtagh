@@ -11,6 +11,11 @@ namespace Murtagh.Editor
     {
         private List<SerializedProperty> _serializedProperties = new();
 
+        protected virtual void OnDisable()
+        {
+            MurtaghEditorGUI.ClearCache();
+        }
+
         public override void OnInspectorGUI()
         {
             GetSerializedProperties(ref _serializedProperties);
@@ -58,7 +63,7 @@ namespace Murtagh.Editor
                 }
                 else if (PropertyUtility.IsVisible(property))
                 {
-                    EditorGUILayout.PropertyField(property, true);
+                    MurtaghEditorGUI.PropertyField_Layout(property, true);
                 }
             }
 
