@@ -1,0 +1,15 @@
+{
+  "name": "com.evaline.murtagh",
+  "version": "1.0.0",
+  "displayName": "Murtagh",
+  "description": "Custom inspector attributes for Unity",
+  "unity": "6000.0",
+  "author": {
+    "name": "Evaline"
+  },
+  "keywords": [
+    "inspector",
+    "attributes",
+    "editor"
+  ]
+}
