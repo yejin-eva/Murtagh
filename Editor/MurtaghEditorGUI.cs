@@ -16,7 +16,8 @@ namespace Murtagh.Editor
                 return;
             
             bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
-            using (new EditorGUI.DisabledScope(isReadOnly))
+            bool isEnabled = PropertyUtility.IsEnabled(property);
+            using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
             {
                 // Arrays need special handling for nested visibility
                 if (includeChildren && property.isArray && property.propertyType == SerializedPropertyType.Generic)
@@ -133,7 +134,8 @@ namespace Murtagh.Editor
                 Rect propRect = new Rect(rect.x, rect.y + yOffset, rect.width, EditorGUI.GetPropertyHeight(iterator, true));
                 
                 bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(iterator) != null;
-                using (new EditorGUI.DisabledScope(isReadOnly))
+                bool isEnabled = PropertyUtility.IsEnabled(iterator);
+                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
                 {
                     EditorGUI.PropertyField(propRect, iterator, new GUIContent(iterator.displayName), true);
                 }

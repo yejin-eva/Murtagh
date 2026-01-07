@@ -2,7 +2,7 @@ using System;
 
 namespace Murtagh
 {
-    public class ShowIfAttributeBase : Attribute, IMurtaghAttribute
+    public class EnableIfAttributeBase : Attribute, IMurtaghAttribute
     {
         public string[] Conditions { get; private set; }
         public EConditionOperator ConditionOperator { get; private set; }
@@ -13,19 +13,19 @@ namespace Murtagh
         /// </summary>
         public Enum EnumValue { get; private set; }
 
-        public ShowIfAttributeBase(string condition)
+        public EnableIfAttributeBase(string condition)
         {
             ConditionOperator = EConditionOperator.And;
             Conditions = new string[1] { condition };
         }
 
-        public ShowIfAttributeBase(EConditionOperator conditionOperator, params string[] conditions)
+        public EnableIfAttributeBase(EConditionOperator conditionOperator, params string[] conditions)
         {
             ConditionOperator = conditionOperator;
             Conditions = conditions;
         }
 
-        public ShowIfAttributeBase(string enumName, Enum enumValue)
+        public EnableIfAttributeBase(string enumName, Enum enumValue)
             : this(enumName)
         {
             if (enumValue == null)

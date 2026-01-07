@@ -34,8 +34,8 @@ namespace Murtagh.Editor
 
         public static bool IsVisible(SerializedProperty property)
         {
-            ShowIfAttributeBase showIfAttribute = GetAttribute<ShowIfAttributeBase>(property);
-            if (showIfAttribute == null)
+            ShowIfAttribute conditionalAttribute = GetAttribute<ShowIfAttribute>(property);
+            if (conditionalAttribute == null)
             {
                 return true;
             }
@@ -43,19 +43,19 @@ namespace Murtagh.Editor
             object target = GetTargetObjectWithProperty(property);
 
             // deal with enum conditions
-            if (showIfAttribute.EnumValue != null)
+            if (conditionalAttribute.EnumValue != null)
             {
-                Enum value = GetEnumValue(target, showIfAttribute.Conditions[0]);
+                Enum value = GetEnumValue(target, conditionalAttribute.Conditions[0]);
                 if (value != null)
                 {
                     bool matched = value.GetType().GetCustomAttribute<FlagsAttribute>() == null
-                        ? showIfAttribute.EnumValue.Equals(value)
-                        : value.HasFlag(showIfAttribute.EnumValue);
+                        ? conditionalAttribute.EnumValue.Equals(value)
+                        : value.HasFlag(conditionalAttribute.EnumValue);
 
-                    return matched != showIfAttribute.Inverted;
+                    return matched != conditionalAttribute.Inverted;
                 }
 
-                string message = showIfAttribute.GetType().Name +
+                string message = conditionalAttribute.GetType().Name +
                                  " needs a valid enum field, property, or method name to work.";
                 Debug.LogWarning(message, property.serializedObject.targetObject);
 
@@ -63,16 +63,64 @@ namespace Murtagh.Editor
             }
 
             // deal with normal conditions
-            List<bool> conditionValues = GetConditionValues(target, showIfAttribute.Conditions);
+            List<bool> conditionValues = GetConditionValues(target, conditionalAttribute.Conditions);
             if (conditionValues.Count > 0)
             {
-                bool enabled = GetConditionsFlag(conditionValues, showIfAttribute.ConditionOperator,
-                    showIfAttribute.Inverted);
+                bool enabled = GetConditionsFlag(conditionValues, conditionalAttribute.ConditionOperator,
+                    conditionalAttribute.Inverted);
                 return enabled;
             }
             else
             {
-                string message = showIfAttribute.GetType().Name +
+                string message = conditionalAttribute.GetType().Name +
+                                 " needs a valid bool field, property, or method name to work.";
+                Debug.LogWarning(message, property.serializedObject.targetObject);
+
+                return false;
+            }
+        }
+        
+        public static bool IsEnabled(SerializedProperty property)
+        {
+            EnableIfAttributeBase conditionalAttribute = GetAttribute<EnableIfAttributeBase>(property);
+            if (conditionalAttribute == null)
+            {
+                return true;
+            }
+
+            object target = GetTargetObjectWithProperty(property);
+
+            // deal with enum conditions
+            if (conditionalAttribute.EnumValue != null)
+            {
+                Enum value = GetEnumValue(target, conditionalAttribute.Conditions[0]);
+                if (value != null)
+                {
+                    bool matched = value.GetType().GetCustomAttribute<FlagsAttribute>() == null
+                        ? conditionalAttribute.EnumValue.Equals(value)
+                        : value.HasFlag(conditionalAttribute.EnumValue);
+
+                    return matched != conditionalAttribute.Inverted;
+                }
+
+                string message = conditionalAttribute.GetType().Name +
+                                 " needs a valid enum field, property, or method name to work.";
+                Debug.LogWarning(message, property.serializedObject.targetObject);
+
+                return false;
+            }
+
+            // deal with normal conditions
+            List<bool> conditionValues = GetConditionValues(target, conditionalAttribute.Conditions);
+            if (conditionValues.Count > 0)
+            {
+                bool enabled = GetConditionsFlag(conditionValues, conditionalAttribute.ConditionOperator,
+                    conditionalAttribute.Inverted);
+                return enabled;
+            }
+            else
+            {
+                string message = conditionalAttribute.GetType().Name +
                                  " needs a valid bool field, property, or method name to work.";
                 Debug.LogWarning(message, property.serializedObject.targetObject);
 
