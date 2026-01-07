@@ -118,76 +118,89 @@ namespace Murtagh.Editor
             var children = GetChildProperties(parentProperty);
             float yPos = rect.y;
 
-            // Draw non-foldout properties first
-            foreach (var child in children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) == null))
+            // Track which foldout groups we've already drawn
+            HashSet<string> drawnFoldoutGroups = new HashSet<string>();
+
+            foreach (var child in children)
             {
-                if (!PropertyUtility.IsVisible(child))
-                    continue;
+                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
 
-                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(child) != null;
-                bool isEnabled = PropertyUtility.IsEnabled(child);
-
-                // Run validators
-                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(child);
-                foreach (var validator in validators)
+                if (foldoutAttr == null)
                 {
-                    validator.GetValidator()?.ValidateProperty(child);
-                }
+                    // Non-foldout property
+                    if (!PropertyUtility.IsVisible(child))
+                        continue;
 
-                float propHeight = EditorGUI.GetPropertyHeight(child, true);
-                Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
+                    bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(child) != null;
+                    bool isEnabled = PropertyUtility.IsEnabled(child);
 
-                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
-                {
-                    EditorGUI.PropertyField(propRect, child, true);
-                }
-
-                yPos += propHeight + 2;
-            }
-
-            // Draw foldout groups
-            var foldoutGroups = children
-                .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) != null)
-                .GroupBy(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p).Name);
-
-            foreach (var group in foldoutGroups)
-            {
-                var visibleProps = group.Where(p => PropertyUtility.IsVisible(p)).ToList();
-                if (!visibleProps.Any())
-                    continue;
-
-                string foldoutKey = $"{parentProperty.propertyPath}.{group.Key}";
-                if (!_nestedFoldouts.ContainsKey(foldoutKey))
-                {
-                    _nestedFoldouts[foldoutKey] = false;
-                }
-
-                Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
-                _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], group.Key, true);
-                yPos += EditorGUIUtility.singleLineHeight + 2;
-
-                if (_nestedFoldouts[foldoutKey])
-                {
-                    foreach (var prop in visibleProps)
+                    ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(child);
+                    foreach (var validator in validators)
                     {
-                        bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
-                        bool isEnabled = PropertyUtility.IsEnabled(prop);
+                        validator.GetValidator()?.ValidateProperty(child);
+                    }
 
-                        ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
-                        foreach (var validator in validators)
+                    float propHeight = EditorGUI.GetPropertyHeight(child, true);
+                    Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
+
+                    using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+                    {
+                        EditorGUI.PropertyField(propRect, child, true);
+                    }
+
+                    yPos += propHeight + 2;
+                }
+                else
+                {
+                    // Foldout property - draw group when first encountered
+                    string groupName = foldoutAttr.Name;
+
+                    if (!drawnFoldoutGroups.Contains(groupName))
+                    {
+                        drawnFoldoutGroups.Add(groupName);
+
+                        var groupProps = children
+                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                            .Where(p => PropertyUtility.IsVisible(p))
+                            .ToList();
+
+                        if (!groupProps.Any())
+                            continue;
+
+                        string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
+                        if (!_nestedFoldouts.ContainsKey(foldoutKey))
                         {
-                            validator.GetValidator()?.ValidateProperty(prop);
+                            _nestedFoldouts[foldoutKey] = false;
                         }
 
-                        float propHeight = EditorGUI.GetPropertyHeight(prop, true);
-                        Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
+                        Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
+                        _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], groupName, true);
+                        yPos += EditorGUIUtility.singleLineHeight + 2;
 
-                        using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+                        if (_nestedFoldouts[foldoutKey])
                         {
-                            EditorGUI.PropertyField(propRect, prop, true);
-                        }
+                            foreach (var prop in groupProps)
+                            {
+                                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
+                                bool isEnabled = PropertyUtility.IsEnabled(prop);
 
-                        yPos += propHeight + 2;
+                                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
+                                foreach (var validator in validators)
+                                {
+                                    validator.GetValidator()?.ValidateProperty(prop);
+                                }
+
+                                float propHeight = EditorGUI.GetPropertyHeight(prop, true);
+                                Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
+
+                                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+                                {
+                                    EditorGUI.PropertyField(propRect, prop, true);
+                                }
+
+                                yPos += propHeight + 2;
+                            }
+                        }
                     }
                 }
             }
@@ -297,24 +310,58 @@ namespace Murtagh.Editor
         
         private static void DrawChildren(SerializedProperty parentProperty)
         {
-            var iterator = parentProperty.Copy();
-            var endProperty = parentProperty.GetEndProperty();
+            var children = GetChildProperties(parentProperty);
+            HashSet<string> drawnFoldoutGroups = new HashSet<string>();
 
-            if (!iterator.NextVisible(true))
-                return;
-
-            do
+            foreach (var child in children)
             {
-                if (SerializedProperty.EqualContents(iterator, endProperty))
-                    break;
+                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
 
-                if (!PropertyUtility.IsVisible(iterator))
-                    continue;
+                if (foldoutAttr == null)
+                {
+                    // Non-foldout property
+                    if (!PropertyUtility.IsVisible(child))
+                        continue;
 
-                // Recursive call for nested support
-                PropertyField_Layout(iterator.Copy(), true);
+                    PropertyField_Layout(child, true);
+                }
+                else
+                {
+                    // Foldout property - draw group when first encountered
+                    string groupName = foldoutAttr.Name;
 
-            } while (iterator.NextVisible(false));
+                    if (!drawnFoldoutGroups.Contains(groupName))
+                    {
+                        drawnFoldoutGroups.Add(groupName);
+
+                        var groupProps = children
+                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                            .Where(p => PropertyUtility.IsVisible(p))
+                            .ToList();
+
+                        if (!groupProps.Any())
+                            continue;
+
+                        string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
+                        if (!_nestedFoldouts.ContainsKey(foldoutKey))
+                        {
+                            _nestedFoldouts[foldoutKey] = false;
+                        }
+
+                        _nestedFoldouts[foldoutKey] = EditorGUILayout.Foldout(_nestedFoldouts[foldoutKey], groupName, true);
+
+                        if (_nestedFoldouts[foldoutKey])
+                        {
+                            EditorGUI.indentLevel++;
+                            foreach (var prop in groupProps)
+                            {
+                                PropertyField_Layout(prop, true);
+                            }
+                            EditorGUI.indentLevel--;
+                        }
+                    }
+                }
+            }
         }
 
         public static void BeginBoxGroup_Layout(string label = "")

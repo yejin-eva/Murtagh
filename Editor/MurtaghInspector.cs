@@ -83,46 +83,68 @@ namespace Murtagh.Editor
         {
             serializedObject.Update();
 
-            // draw non-grouped serialized properties 
-            foreach (var property in GetNonGroupedProperties(_serializedProperties))
+            // Track which foldout groups we've already drawn
+            HashSet<string> drawnFoldoutGroups = new HashSet<string>();
+
+            foreach (var property in _serializedProperties)
             {
+                // Handle m_Script specially
                 if (property.name.Equals("m_Script", System.StringComparison.Ordinal))
                 {
                     using (new EditorGUI.DisabledScope(disabled: true))
                     {
                         EditorGUILayout.PropertyField(property);
                     }
-                }
-                else if (PropertyUtility.IsVisible(property))
-                {
-                    bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
-                    using (new EditorGUI.DisabledScope(isReadOnly))
-                    {
-                        MurtaghEditorGUI.PropertyField_Layout(property, true);
-                    }
-                }
-            }
-            
-            // draw foldout serialized properties
-            foreach (var group in GetFoldoutProperties(_serializedProperties))
-            {
-                IEnumerable<SerializedProperty> visibleProperties = group.Where(p => PropertyUtility.IsVisible(p));
-                if (!visibleProperties.Any())
-                {
                     continue;
                 }
 
-                if (!_foldouts.ContainsKey(group.Key))
-                {
-                    _foldouts[group.Key] = new SavedBool($"{target.GetInstanceID()}.{group.Key}", false);
-                }
+                // Check if this property belongs to a foldout group
+                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(property);
 
-                _foldouts[group.Key].Value = EditorGUILayout.Foldout(_foldouts[group.Key].Value, group.Key, true);
-                if (_foldouts[group.Key].Value)
+                if (foldoutAttr == null)
                 {
-                    foreach (var property in visibleProperties)
+                    // Non-grouped property - draw normally
+                    if (PropertyUtility.IsVisible(property))
                     {
-                        MurtaghEditorGUI.PropertyField_Layout(property, true);
+                        bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
+                        using (new EditorGUI.DisabledScope(isReadOnly))
+                        {
+                            MurtaghEditorGUI.PropertyField_Layout(property, true);
+                        }
+                    }
+                }
+                else
+                {
+                    // Foldout property - draw the group if we haven't already
+                    string groupName = foldoutAttr.Name;
+
+                    if (!drawnFoldoutGroups.Contains(groupName))
+                    {
+                        drawnFoldoutGroups.Add(groupName);
+
+                        // Get all properties in this foldout group
+                        var groupProperties = _serializedProperties
+                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                            .Where(p => PropertyUtility.IsVisible(p))
+                            .ToList();
+
+                        if (groupProperties.Any())
+                        {
+                            if (!_foldouts.ContainsKey(groupName))
+                            {
+                                _foldouts[groupName] = new SavedBool($"{target.GetInstanceID()}.{groupName}", false);
+                            }
+
+                            _foldouts[groupName].Value = EditorGUILayout.Foldout(_foldouts[groupName].Value, groupName, true);
+
+                            if (_foldouts[groupName].Value)
+                            {
+                                foreach (var groupProperty in groupProperties)
+                                {
+                                    MurtaghEditorGUI.PropertyField_Layout(groupProperty, true);
+                                }
+                            }
+                        }
                     }
                 }
             }
