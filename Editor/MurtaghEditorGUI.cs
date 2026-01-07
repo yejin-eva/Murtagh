@@ -14,6 +14,13 @@ namespace Murtagh.Editor
             // Check if visible
             if (!PropertyUtility.IsVisible(property))
                 return;
+           
+            // validate
+            ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(property);
+            foreach (var validator in validators)
+            {
+                validator.GetValidator()?.ValidateProperty(property);
+            }
             
             bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
             bool isEnabled = PropertyUtility.IsEnabled(property);
@@ -132,6 +139,12 @@ namespace Murtagh.Editor
                     continue;
 
                 Rect propRect = new Rect(rect.x, rect.y + yOffset, rect.width, EditorGUI.GetPropertyHeight(iterator, true));
+
+                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(iterator);
+                foreach (var validator in validators)
+                {
+                    validator.GetValidator()?.ValidateProperty(iterator);
+                }
                 
                 bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(iterator) != null;
                 bool isEnabled = PropertyUtility.IsEnabled(iterator);
