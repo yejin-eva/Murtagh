@@ -24,13 +24,7 @@ namespace Murtagh.Editor
 
         public static PropertyValidatorBase GetValidator(this ValidatorAttribute attribute)
         {
-            PropertyValidatorBase validator;
-            if (_validatorsByAttributeType.TryGetValue(attribute.GetType(), out validator))
-            {
-                return validator;
-            }
-            
-            return null;
+            return _validatorsByAttributeType.GetValueOrDefault(attribute.GetType());
         }
     }
 }
