@@ -49,16 +49,28 @@ namespace Murtagh.Editor
 
         private static void DrawArrayWithReorderableList(SerializedProperty property)
         {
+            // Draw foldout with size field
+            Rect headerRect = EditorGUILayout.GetControlRect();
+            Rect foldoutRect = new Rect(headerRect.x, headerRect.y, headerRect.width - 60, headerRect.height);
+            Rect sizeRect = new Rect(headerRect.xMax - 55, headerRect.y, 55, headerRect.height);
+
+            property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName, true);
+
+            EditorGUI.BeginChangeCheck();
+            int newSize = EditorGUI.DelayedIntField(sizeRect, property.arraySize);
+            if (EditorGUI.EndChangeCheck())
+            {
+                property.arraySize = newSize;
+            }
+
+            if (!property.isExpanded)
+                return;
+
             string key = property.serializedObject.targetObject.GetInstanceID() + "." + property.propertyPath;
 
             if (!_reorderableLists.TryGetValue(key, out ReorderableList list) || list.serializedProperty.serializedObject != property.serializedObject)
             {
-                list = new ReorderableList(property.serializedObject, property, true, true, true, true);
-
-                list.drawHeaderCallback = (Rect rect) =>
-                {
-                    EditorGUI.LabelField(rect, property.displayName);
-                };
+                list = new ReorderableList(property.serializedObject, property, true, false, true, true);
 
                 list.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
                 {
