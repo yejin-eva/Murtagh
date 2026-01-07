@@ -82,6 +82,14 @@ namespace Murtagh.Editor
 
             list.DoLayoutList();
         }
+        
+        public static float GetIndentLength(Rect sourceRect)
+        {
+            Rect indentRect = EditorGUI.IndentedRect(sourceRect);
+            float indentLength = indentRect.x - sourceRect.x;
+
+            return indentLength;
+        }
 
         private static void DrawNestedClass(SerializedProperty property)
         {
@@ -183,6 +191,26 @@ namespace Murtagh.Editor
                 EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
             }
         }
+        
+        public static void HelpBox(Rect rect, string message, MessageType type, UnityEngine.Object context = null, bool logToConsole = false)
+        {
+            EditorGUI.HelpBox(rect, message, type);
+
+            if (logToConsole)
+            {
+                DebugLogMessage(message, type, context);
+            }
+        }
+
+        public static void HelpBox_Layout(string message, MessageType type, UnityEngine.Object context = null, bool logToConsole = false)
+        {
+            EditorGUILayout.HelpBox(message, type);
+
+            if (logToConsole)
+            {
+                DebugLogMessage(message, type, context);
+            }
+        }
 
         public static void EndBoxGroup_Layout()
         {
@@ -192,6 +220,23 @@ namespace Murtagh.Editor
         public static void ClearCache()
         {
             _reorderableLists.Clear();
+        }
+        
+        private static void DebugLogMessage(string message, MessageType type, UnityEngine.Object context)
+        {
+            switch (type)
+            {
+                case MessageType.None:
+                case MessageType.Info:
+                    Debug.Log(message, context);
+                    break;
+                case MessageType.Warning:
+                    Debug.LogWarning(message, context);
+                    break;
+                case MessageType.Error:
+                    Debug.LogError(message, context);
+                    break;
+            }
         }
     }
 }
