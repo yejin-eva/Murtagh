@@ -2,13 +2,15 @@ using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Murtagh.Editor
 {
     public static class MurtaghEditorGUI
     {
         private static Dictionary<string, ReorderableList> _reorderableLists = new Dictionary<string, ReorderableList>();
-
+        private static Dictionary<string, bool> _nestedFoldouts = new();
+        
         public static void PropertyField_Layout(SerializedProperty property, bool includeChildren)
         {
             // Check if visible
@@ -67,26 +69,13 @@ namespace Murtagh.Editor
                     rect.width -= 10;
                     rect.y += 2;
 
-                    if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
-                    {
-                        // Draw nested class with visibility checks
-                        DrawNestedClassInRect(rect, element, index);
-                    }
-                    else
-                    {
-                        rect.height = EditorGUIUtility.singleLineHeight;
-                        EditorGUI.PropertyField(rect, element, GUIContent.none);
-                    }
+                    DrawElementInRect(rect, element, index);
                 };
 
                 list.elementHeightCallback = (int index) =>
                 {
                     var element = property.GetArrayElementAtIndex(index);
-                    if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
-                    {
-                        return GetNestedClassHeight(element);
-                    }
-                    return EditorGUIUtility.singleLineHeight + 4;
+                    return GetElementHeight(element) + 4;
                 };
 
                 _reorderableLists[key] = list;
@@ -94,15 +83,176 @@ namespace Murtagh.Editor
 
             list.DoLayoutList();
         }
-        
-        public static float GetIndentLength(Rect sourceRect)
-        {
-            Rect indentRect = EditorGUI.IndentedRect(sourceRect);
-            float indentLength = indentRect.x - sourceRect.x;
 
-            return indentLength;
+        private static void DrawElementInRect(Rect rect, SerializedProperty element, int index)
+        {
+            if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
+            {
+                // Nested class element: draw foldout header then children
+                Rect foldoutRect = new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight);
+
+                string foldoutKey = element.propertyPath;
+                if (!_nestedFoldouts.ContainsKey(foldoutKey))
+                {
+                    _nestedFoldouts[foldoutKey] = false;
+                }
+
+                _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], $"Element {index}", true);
+                element.isExpanded = _nestedFoldouts[foldoutKey];
+
+                if (element.isExpanded)
+                {
+                    float yOffset = EditorGUIUtility.singleLineHeight + 2;
+                    Rect childrenRect = new Rect(rect.x + 15, rect.y + yOffset, rect.width - 15, rect.height - yOffset);
+                    DrawChildrenInRect(childrenRect, element);
+                }
+            }
+            else
+            {
+                EditorGUI.PropertyField(rect, element, GUIContent.none);
+            }
         }
 
+        private static void DrawChildrenInRect(Rect rect, SerializedProperty parentProperty)
+        {
+            var children = GetChildProperties(parentProperty);
+            float yPos = rect.y;
+
+            // Draw non-foldout properties first
+            foreach (var child in children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) == null))
+            {
+                if (!PropertyUtility.IsVisible(child))
+                    continue;
+
+                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(child) != null;
+                bool isEnabled = PropertyUtility.IsEnabled(child);
+
+                // Run validators
+                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(child);
+                foreach (var validator in validators)
+                {
+                    validator.GetValidator()?.ValidateProperty(child);
+                }
+
+                float propHeight = EditorGUI.GetPropertyHeight(child, true);
+                Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
+
+                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+                {
+                    EditorGUI.PropertyField(propRect, child, true);
+                }
+
+                yPos += propHeight + 2;
+            }
+
+            // Draw foldout groups
+            var foldoutGroups = children
+                .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) != null)
+                .GroupBy(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p).Name);
+
+            foreach (var group in foldoutGroups)
+            {
+                var visibleProps = group.Where(p => PropertyUtility.IsVisible(p)).ToList();
+                if (!visibleProps.Any())
+                    continue;
+
+                string foldoutKey = $"{parentProperty.propertyPath}.{group.Key}";
+                if (!_nestedFoldouts.ContainsKey(foldoutKey))
+                {
+                    _nestedFoldouts[foldoutKey] = false;
+                }
+
+                Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
+                _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], group.Key, true);
+                yPos += EditorGUIUtility.singleLineHeight + 2;
+
+                if (_nestedFoldouts[foldoutKey])
+                {
+                    foreach (var prop in visibleProps)
+                    {
+                        bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
+                        bool isEnabled = PropertyUtility.IsEnabled(prop);
+
+                        ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
+                        foreach (var validator in validators)
+                        {
+                            validator.GetValidator()?.ValidateProperty(prop);
+                        }
+
+                        float propHeight = EditorGUI.GetPropertyHeight(prop, true);
+                        Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
+
+                        using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+                        {
+                            EditorGUI.PropertyField(propRect, prop, true);
+                        }
+
+                        yPos += propHeight + 2;
+                    }
+                }
+            }
+        }
+
+        private static float GetElementHeight(SerializedProperty element)
+        {
+            if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
+            {
+                float height = EditorGUIUtility.singleLineHeight; // foldout header
+
+                if (element.isExpanded)
+                {
+                    height += GetChildrenHeight(element);
+                }
+
+                return height;
+            }
+            
+            return EditorGUIUtility.singleLineHeight;
+        }
+
+        private static float GetChildrenHeight(SerializedProperty parentProperty)
+        {
+            float height = 0f;
+
+            var children = GetChildProperties(parentProperty);
+            
+            // non-foldout properties
+            foreach (var child in children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) == null))
+            {
+                if (!PropertyUtility.IsVisible(child))
+                {
+                    continue;
+                }
+                height += EditorGUI.GetPropertyHeight(child, true) + 2;
+            }
+            
+            // foldout groups
+            var foldoutGroups = children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) != null)
+                .GroupBy(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p).Name);
+
+            foreach (var group in foldoutGroups)
+            {
+                var visibleProps = group.Where(p => PropertyUtility.IsVisible(p)).ToList();
+                if (!visibleProps.Any())
+                {
+                    continue;
+                }
+
+                height += EditorGUIUtility.singleLineHeight + 2; // foldout header
+                
+                string foldoutKey = $"{parentProperty.propertyPath}.{group.Key}";
+                if (_nestedFoldouts.TryGetValue(foldoutKey, out bool isExpanded) && isExpanded)
+                {
+                    foreach (var prop in visibleProps)
+                    {
+                        height += EditorGUI.GetPropertyHeight(prop, true) + 2;
+                    }
+                }
+            }
+
+            return height;
+        }
+        
         private static void DrawNestedClass(SerializedProperty property)
         {
             property.isExpanded = EditorGUILayout.Foldout(property.isExpanded, property.displayName, true);
@@ -115,77 +265,36 @@ namespace Murtagh.Editor
             EditorGUI.indentLevel--;
         }
 
-        private static void DrawNestedClassInRect(Rect rect, SerializedProperty property, int index)
+        private static List<SerializedProperty> GetChildProperties(SerializedProperty parentProperty)
         {
-            Rect foldoutRect = new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight);
-            property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, $"Element {index}", true);
+            var children = new List<SerializedProperty>();
+            var iterator = parentProperty.Copy();
+            var endProperty = parentProperty.GetEndProperty();
 
-            if (!property.isExpanded)
-                return;
-
-            float yOffset = EditorGUIUtility.singleLineHeight + 2;
-            var iterator = property.Copy();
-            var endProperty = property.GetEndProperty();
-
-            if (!iterator.NextVisible(true))
-                return;
-
-            do
+            if (iterator.NextVisible(true))
             {
-                if (SerializedProperty.EqualContents(iterator, endProperty))
-                    break;
-
-                if (!PropertyUtility.IsVisible(iterator))
-                    continue;
-
-                Rect propRect = new Rect(rect.x, rect.y + yOffset, rect.width, EditorGUI.GetPropertyHeight(iterator, true));
-
-                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(iterator);
-                foreach (var validator in validators)
+                do
                 {
-                    validator.GetValidator()?.ValidateProperty(iterator);
-                }
-                
-                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(iterator) != null;
-                bool isEnabled = PropertyUtility.IsEnabled(iterator);
-                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
-                {
-                    EditorGUI.PropertyField(propRect, iterator, new GUIContent(iterator.displayName), true);
-                }
-                
-                yOffset += propRect.height + 2;
+                    if (SerializedProperty.EqualContents(iterator, endProperty))
+                    {
+                        break;
+                    }
+                    children.Add(iterator.Copy());
+                } while (iterator.NextVisible(false));
+            }
 
-            } while (iterator.NextVisible(false));
+            return children;
         }
-
-        private static float GetNestedClassHeight(SerializedProperty property)
+        
+        
+        public static float GetIndentLength(Rect sourceRect)
         {
-            float height = EditorGUIUtility.singleLineHeight + 4; // Foldout
+            Rect indentRect = EditorGUI.IndentedRect(sourceRect);
+            float indentLength = indentRect.x - sourceRect.x;
 
-            if (!property.isExpanded)
-                return height;
-
-            var iterator = property.Copy();
-            var endProperty = property.GetEndProperty();
-
-            if (!iterator.NextVisible(true))
-                return height;
-
-            do
-            {
-                if (SerializedProperty.EqualContents(iterator, endProperty))
-                    break;
-
-                if (!PropertyUtility.IsVisible(iterator))
-                    continue;
-
-                height += EditorGUI.GetPropertyHeight(iterator, true) + 2;
-
-            } while (iterator.NextVisible(false));
-
-            return height;
+            return indentLength;
         }
-
+        
         private static void DrawChildren(SerializedProperty parentProperty)
         {
             var iterator = parentProperty.Copy();
@@ -217,6 +326,11 @@ namespace Murtagh.Editor
             }
         }
         
+        public static void EndBoxGroup_Layout()
+        {
+            EditorGUILayout.EndVertical();
+        }
+        
         public static void HelpBox(Rect rect, string message, MessageType type, UnityEngine.Object context = null, bool logToConsole = false)
         {
             EditorGUI.HelpBox(rect, message, type);
@@ -237,14 +351,10 @@ namespace Murtagh.Editor
             }
         }
 
-        public static void EndBoxGroup_Layout()
-        {
-            EditorGUILayout.EndVertical();
-        }
-
         public static void ClearCache()
         {
             _reorderableLists.Clear();
+            _nestedFoldouts.Clear();
         }
         
         private static void DebugLogMessage(string message, MessageType type, UnityEngine.Object context)

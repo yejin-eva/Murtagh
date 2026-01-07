@@ -103,13 +103,9 @@ namespace Murtagh.Editor
                 }
             }
             
-            var foldoutGroups = GetFoldoutProperties(_serializedProperties).ToList();
-            Debug.Log($"Foldout groups found: {foldoutGroups.Count}");
-            
             // draw foldout serialized properties
             foreach (var group in GetFoldoutProperties(_serializedProperties))
             {
-                Debug.Log($"Group: {group.Key}, Properties: {group.Count()}");
                 IEnumerable<SerializedProperty> visibleProperties = group.Where(p => PropertyUtility.IsVisible(p));
                 if (!visibleProperties.Any())
                 {
@@ -130,9 +126,6 @@ namespace Murtagh.Editor
                     }
                 }
             }
-            
-            var nonGrouped = GetNonGroupedProperties(_serializedProperties).ToList();
-            Debug.Log($"Non-grouped properties: {nonGrouped.Count}");
 
             serializedObject.ApplyModifiedProperties();
         }
