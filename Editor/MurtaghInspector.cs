@@ -10,6 +10,7 @@ namespace Murtagh.Editor
     public class MurtaghInspector : UnityEditor.Editor
     {
         private List<SerializedProperty> _serializedProperties = new();
+        private Dictionary<string, SavedBool> _foldouts = new();
 
         protected virtual void OnDisable()
         {
@@ -82,7 +83,8 @@ namespace Murtagh.Editor
         {
             serializedObject.Update();
 
-            foreach (var property in _serializedProperties)
+            // draw non-grouped serialized properties 
+            foreach (var property in GetNonGroupedProperties(_serializedProperties))
             {
                 if (property.name.Equals("m_Script", System.StringComparison.Ordinal))
                 {
@@ -100,8 +102,52 @@ namespace Murtagh.Editor
                     }
                 }
             }
+            
+            var foldoutGroups = GetFoldoutProperties(_serializedProperties).ToList();
+            Debug.Log($"Foldout groups found: {foldoutGroups.Count}");
+            
+            // draw foldout serialized properties
+            foreach (var group in GetFoldoutProperties(_serializedProperties))
+            {
+                Debug.Log($"Group: {group.Key}, Properties: {group.Count()}");
+                IEnumerable<SerializedProperty> visibleProperties = group.Where(p => PropertyUtility.IsVisible(p));
+                if (!visibleProperties.Any())
+                {
+                    continue;
+                }
+
+                if (!_foldouts.ContainsKey(group.Key))
+                {
+                    _foldouts[group.Key] = new SavedBool($"{target.GetInstanceID()}.{group.Key}", false);
+                }
+
+                _foldouts[group.Key].Value = EditorGUILayout.Foldout(_foldouts[group.Key].Value, group.Key, true);
+                if (_foldouts[group.Key].Value)
+                {
+                    foreach (var property in visibleProperties)
+                    {
+                        MurtaghEditorGUI.PropertyField_Layout(property, true);
+                    }
+                }
+            }
+            
+            var nonGrouped = GetNonGroupedProperties(_serializedProperties).ToList();
+            Debug.Log($"Non-grouped properties: {nonGrouped.Count}");
 
             serializedObject.ApplyModifiedProperties();
+        }
+        
+        private static IEnumerable<SerializedProperty> GetNonGroupedProperties(IEnumerable<SerializedProperty> properties)
+        {
+            return properties.Where(p => PropertyUtility.GetAttribute<IGroupAttribute>(p) == null);
+        }
+
+        private static IEnumerable<IGrouping<string, SerializedProperty>> GetFoldoutProperties(
+            IEnumerable<SerializedProperty> properties)
+        {
+            return properties
+                .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) != null)
+                .GroupBy(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p).Name);
         }
     }
 }
