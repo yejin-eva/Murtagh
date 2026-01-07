@@ -14,23 +14,27 @@ namespace Murtagh.Editor
             // Check if visible
             if (!PropertyUtility.IsVisible(property))
                 return;
-
-            // Arrays need special handling for nested visibility
-            if (includeChildren && property.isArray && property.propertyType == SerializedPropertyType.Generic)
+            
+            bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
+            using (new EditorGUI.DisabledScope(isReadOnly))
             {
-                DrawArrayWithReorderableList(property);
-                return;
-            }
+                // Arrays need special handling for nested visibility
+                if (includeChildren && property.isArray && property.propertyType == SerializedPropertyType.Generic)
+                {
+                    DrawArrayWithReorderableList(property);
+                    return;
+                }
 
-            // Generic types (nested classes) need child visibility checks
-            if (includeChildren && property.hasVisibleChildren && property.propertyType == SerializedPropertyType.Generic)
-            {
-                DrawNestedClass(property);
-                return;
-            }
+                // Generic types (nested classes) need child visibility checks
+                if (includeChildren && property.hasVisibleChildren && property.propertyType == SerializedPropertyType.Generic)
+                {
+                    DrawNestedClass(property);
+                    return;
+                }
 
-            // Default Unity drawer for everything else
-            EditorGUILayout.PropertyField(property, new GUIContent(property.displayName), includeChildren);
+                // Default Unity drawer for everything else
+                EditorGUILayout.PropertyField(property, new GUIContent(property.displayName), includeChildren);
+            }
         }
 
         private static void DrawArrayWithReorderableList(SerializedProperty property)
@@ -127,7 +131,13 @@ namespace Murtagh.Editor
                     continue;
 
                 Rect propRect = new Rect(rect.x, rect.y + yOffset, rect.width, EditorGUI.GetPropertyHeight(iterator, true));
-                EditorGUI.PropertyField(propRect, iterator, new GUIContent(iterator.displayName), true);
+                
+                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(iterator) != null;
+                using (new EditorGUI.DisabledScope(isReadOnly))
+                {
+                    EditorGUI.PropertyField(propRect, iterator, new GUIContent(iterator.displayName), true);
+                }
+                
                 yOffset += propRect.height + 2;
 
             } while (iterator.NextVisible(false));

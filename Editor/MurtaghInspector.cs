@@ -93,7 +93,11 @@ namespace Murtagh.Editor
                 }
                 else if (PropertyUtility.IsVisible(property))
                 {
-                    MurtaghEditorGUI.PropertyField_Layout(property, true);
+                    bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
+                    using (new EditorGUI.DisabledScope(isReadOnly))
+                    {
+                        MurtaghEditorGUI.PropertyField_Layout(property, true);
+                    }
                 }
             }
 
