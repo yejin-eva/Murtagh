@@ -18,6 +18,7 @@ namespace Murtagh.Editor
             _validatorsByAttributeType = new Dictionary<Type, PropertyValidatorBase>();
             _validatorsByAttributeType[typeof(MinValueAttribute)] = new MinValuePropertyValidator();
             _validatorsByAttributeType[typeof(MaxValueAttribute)] = new MaxValuePropertyValidator();
+            _validatorsByAttributeType[typeof(RequiredAttribute)] = new RequiredPropertyValidator();
         }
 
         public static PropertyValidatorBase GetValidator(this ValidatorAttribute attribute)
