@@ -228,8 +228,6 @@ namespace Murtagh.Editor
         {
             var children = GetChildProperties(parentProperty);
             float yPos = rect.y;
-
-            // Track which foldout groups we've already drawn
             HashSet<string> drawnFoldoutGroups = new HashSet<string>();
 
             foreach (var child in children)
@@ -242,132 +240,65 @@ namespace Murtagh.Editor
                     if (!PropertyUtility.IsVisible(child))
                         continue;
 
-                    bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(child) != null;
-                    bool isEnabled = PropertyUtility.IsEnabled(child);
-
-                    ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(child);
-                    foreach (var validator in validators)
-                    {
-                        validator.GetValidator()?.ValidateProperty(child);
-                    }
-
-                    using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
-                    {
-                        // Nested array - use ReorderableList
-                        if (child.isArray && child.propertyType == SerializedPropertyType.Generic)
-                        {
-                            float arrayHeight = GetReorderableListHeight(child);
-                            Rect arrayRect = new Rect(rect.x, yPos, rect.width, arrayHeight);
-                            DrawArrayInRect(arrayRect, child);
-                            yPos += arrayHeight + 2;
-                        }
-                        // Nested class - recurse
-                        else if (child.hasVisibleChildren && child.propertyType == SerializedPropertyType.Generic)
-                        {
-                            float nestedHeight = EditorGUIUtility.singleLineHeight + 2;
-                            if (child.isExpanded)
-                            {
-                                nestedHeight += GetChildrenHeight(child);
-                            }
-
-                            Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
-                            child.isExpanded = EditorGUI.Foldout(foldoutRect, child.isExpanded, child.displayName, true);
-                            yPos += EditorGUIUtility.singleLineHeight + 2;
-
-                            if (child.isExpanded)
-                            {
-                                Rect childrenRect = new Rect(rect.x + 15, yPos, rect.width - 15, GetChildrenHeight(child));
-                                DrawChildrenInRect(childrenRect, child);
-                                yPos += GetChildrenHeight(child);
-                            }
-                        }
-                        // Simple property
-                        else
-                        {
-                            float propHeight = EditorGUI.GetPropertyHeight(child, true);
-                            Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
-                            EditorGUI.PropertyField(propRect, child, true);
-                            yPos += propHeight + 2;
-                        }
-                    }
+                    yPos += DrawPropertyWithAttributes(rect, child, yPos, 0);
                 }
                 else
                 {
-                    // Foldout property - draw group when first encountered
+                    // Foldout group - draw when first encountered
                     string groupName = foldoutAttr.Name;
+                    if (drawnFoldoutGroups.Contains(groupName))
+                        continue;
 
-                    if (!drawnFoldoutGroups.Contains(groupName))
+                    drawnFoldoutGroups.Add(groupName);
+
+                    var groupProps = children
+                        .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                        .Where(p => PropertyUtility.IsVisible(p))
+                        .ToList();
+
+                    if (!groupProps.Any())
+                        continue;
+
+                    // Draw foldout header
+                    string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
+                    if (!_nestedFoldouts.ContainsKey(foldoutKey))
+                        _nestedFoldouts[foldoutKey] = false;
+
+                    Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
+                    _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], groupName, true);
+                    yPos += EditorGUIUtility.singleLineHeight + 2;
+
+                    // Draw foldout contents
+                    if (_nestedFoldouts[foldoutKey])
                     {
-                        drawnFoldoutGroups.Add(groupName);
-
-                        var groupProps = children
-                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
-                            .Where(p => PropertyUtility.IsVisible(p))
-                            .ToList();
-
-                        if (!groupProps.Any())
-                            continue;
-
-                        string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
-                        if (!_nestedFoldouts.ContainsKey(foldoutKey))
+                        foreach (var prop in groupProps)
                         {
-                            _nestedFoldouts[foldoutKey] = false;
-                        }
-
-                        Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
-                        _nestedFoldouts[foldoutKey] = EditorGUI.Foldout(foldoutRect, _nestedFoldouts[foldoutKey], groupName, true);
-                        yPos += EditorGUIUtility.singleLineHeight + 2;
-
-                        if (_nestedFoldouts[foldoutKey])
-                        {
-                            foreach (var prop in groupProps)
-                            {
-                                bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
-                                bool isEnabled = PropertyUtility.IsEnabled(prop);
-
-                                ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
-                                foreach (var validator in validators)
-                                {
-                                    validator.GetValidator()?.ValidateProperty(prop);
-                                }
-
-                                using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
-                                {
-                                    // Nested array inside foldout
-                                    if (prop.isArray && prop.propertyType == SerializedPropertyType.Generic)
-                                    {
-                                        float arrayHeight = GetReorderableListHeight(prop);
-                                        Rect arrayRect = new Rect(rect.x + 15, yPos, rect.width - 15, arrayHeight);
-                                        DrawArrayInRect(arrayRect, prop);
-                                        yPos += arrayHeight + 2;
-                                    }
-                                    // Nested class inside foldout
-                                    else if (prop.hasVisibleChildren && prop.propertyType == SerializedPropertyType.Generic)
-                                    {
-                                        Rect nestedFoldoutRect = new Rect(rect.x + 15, yPos, rect.width - 15, EditorGUIUtility.singleLineHeight);
-                                        prop.isExpanded = EditorGUI.Foldout(nestedFoldoutRect, prop.isExpanded, prop.displayName, true);
-                                        yPos += EditorGUIUtility.singleLineHeight + 2;
-
-                                        if (prop.isExpanded)
-                                        {
-                                            Rect childrenRect = new Rect(rect.x + 30, yPos, rect.width - 30, GetChildrenHeight(prop));
-                                            DrawChildrenInRect(childrenRect, prop);
-                                            yPos += GetChildrenHeight(prop);
-                                        }
-                                    }
-                                    // Simple property
-                                    else
-                                    {
-                                        float propHeight = EditorGUI.GetPropertyHeight(prop, true);
-                                        Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
-                                        EditorGUI.PropertyField(propRect, prop, true);
-                                        yPos += propHeight + 2;
-                                    }
-                                }
-                            }
+                            yPos += DrawPropertyWithAttributes(rect, prop, yPos, 15);
                         }
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Draws a property with all attribute handling (visibility, readonly, validators).
+        /// Returns the height consumed.
+        /// </summary>
+        private static float DrawPropertyWithAttributes(Rect rect, SerializedProperty prop, float yPos, float indent)
+        {
+            bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
+            bool isEnabled = PropertyUtility.IsEnabled(prop);
+
+            // Run validators
+            ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
+            foreach (var validator in validators)
+            {
+                validator.GetValidator()?.ValidateProperty(prop);
+            }
+
+            using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
+            {
+                return DrawPropertyInRect(rect, prop, yPos, indent);
             }
         }
 
@@ -403,68 +334,32 @@ namespace Murtagh.Editor
                     if (!PropertyUtility.IsVisible(child))
                         continue;
 
-                    // Nested array
-                    if (child.isArray && child.propertyType == SerializedPropertyType.Generic)
-                    {
-                        height += GetReorderableListHeight(child) + 2;
-                    }
-                    // Nested class
-                    else if (child.hasVisibleChildren && child.propertyType == SerializedPropertyType.Generic)
-                    {
-                        height += EditorGUIUtility.singleLineHeight + 2; // foldout
-                        if (child.isExpanded)
-                        {
-                            height += GetChildrenHeight(child);
-                        }
-                    }
-                    // Simple property
-                    else
-                    {
-                        height += EditorGUI.GetPropertyHeight(child, true) + 2;
-                    }
+                    height += GetPropertyHeightInRect(child);
                 }
                 else
                 {
                     string groupName = foldoutAttr.Name;
-                    if (!countedFoldoutGroups.Contains(groupName))
+                    if (countedFoldoutGroups.Contains(groupName))
+                        continue;
+
+                    countedFoldoutGroups.Add(groupName);
+
+                    var visibleProps = children
+                        .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                        .Where(p => PropertyUtility.IsVisible(p))
+                        .ToList();
+
+                    if (!visibleProps.Any())
+                        continue;
+
+                    height += EditorGUIUtility.singleLineHeight + 2; // foldout header
+
+                    string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
+                    if (_nestedFoldouts.TryGetValue(foldoutKey, out bool isExpanded) && isExpanded)
                     {
-                        countedFoldoutGroups.Add(groupName);
-
-                        var visibleProps = children
-                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
-                            .Where(p => PropertyUtility.IsVisible(p))
-                            .ToList();
-
-                        if (!visibleProps.Any())
-                            continue;
-
-                        height += EditorGUIUtility.singleLineHeight + 2; // foldout header
-
-                        string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
-                        if (_nestedFoldouts.TryGetValue(foldoutKey, out bool isExpanded) && isExpanded)
+                        foreach (var prop in visibleProps)
                         {
-                            foreach (var prop in visibleProps)
-                            {
-                                // Nested array inside foldout
-                                if (prop.isArray && prop.propertyType == SerializedPropertyType.Generic)
-                                {
-                                    height += GetReorderableListHeight(prop) + 2;
-                                }
-                                // Nested class inside foldout
-                                else if (prop.hasVisibleChildren && prop.propertyType == SerializedPropertyType.Generic)
-                                {
-                                    height += EditorGUIUtility.singleLineHeight + 2;
-                                    if (prop.isExpanded)
-                                    {
-                                        height += GetChildrenHeight(prop);
-                                    }
-                                }
-                                // Simple property
-                                else
-                                {
-                                    height += EditorGUI.GetPropertyHeight(prop, true) + 2;
-                                }
-                            }
+                            height += GetPropertyHeightInRect(prop);
                         }
                     }
                 }
@@ -571,20 +466,6 @@ namespace Murtagh.Editor
             }
         }
 
-        public static void BeginBoxGroup_Layout(string label = "")
-        {
-            EditorGUILayout.BeginVertical(GUI.skin.box);
-            if (!string.IsNullOrEmpty(label))
-            {
-                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
-            }
-        }
-        
-        public static void EndBoxGroup_Layout()
-        {
-            EditorGUILayout.EndVertical();
-        }
-        
         public static void HelpBox(Rect rect, string message, MessageType type, UnityEngine.Object context = null, bool logToConsole = false)
         {
             EditorGUI.HelpBox(rect, message, type);
@@ -604,6 +485,79 @@ namespace Murtagh.Editor
                 DebugLogMessage(message, type, context);
             }
         }
+        
+        // ============== HELPER METHODS FOR PROPERTY DRAWING/HEIGHT ==============
+
+        private static bool IsArray(SerializedProperty prop) =>
+            prop.isArray && prop.propertyType == SerializedPropertyType.Generic;
+
+        private static bool IsNestedClass(SerializedProperty prop) =>
+            prop.hasVisibleChildren && prop.propertyType == SerializedPropertyType.Generic && !prop.isArray;
+
+        /// <summary>
+        /// Draws a single property (array, nested class, or simple) and returns the height used.
+        /// </summary>
+        private static float DrawPropertyInRect(Rect rect, SerializedProperty prop, float yPos, float indent)
+        {
+            float startY = yPos;
+
+            if (IsArray(prop))
+            {
+                float arrayHeight = GetReorderableListHeight(prop);
+                Rect arrayRect = new Rect(rect.x + indent, yPos, rect.width - indent, arrayHeight);
+                DrawArrayInRect(arrayRect, prop);
+                yPos += arrayHeight + 2;
+            }
+            else if (IsNestedClass(prop))
+            {
+                Rect foldoutRect = new Rect(rect.x + indent, yPos, rect.width - indent, EditorGUIUtility.singleLineHeight);
+                prop.isExpanded = EditorGUI.Foldout(foldoutRect, prop.isExpanded, prop.displayName, true);
+                yPos += EditorGUIUtility.singleLineHeight + 2;
+
+                if (prop.isExpanded)
+                {
+                    float childrenHeight = GetChildrenHeight(prop);
+                    Rect childrenRect = new Rect(rect.x + indent + 15, yPos, rect.width - indent - 15, childrenHeight);
+                    DrawChildrenInRect(childrenRect, prop);
+                    yPos += childrenHeight;
+                }
+            }
+            else
+            {
+                float propHeight = EditorGUI.GetPropertyHeight(prop, true);
+                Rect propRect = new Rect(rect.x + indent, yPos, rect.width - indent, propHeight);
+                EditorGUI.PropertyField(propRect, prop, true);
+                yPos += propHeight + 2;
+            }
+
+            return yPos - startY;
+        }
+
+        /// <summary>
+        /// Gets the height of a single property (array, nested class, or simple).
+        /// </summary>
+        private static float GetPropertyHeightInRect(SerializedProperty prop)
+        {
+            if (IsArray(prop))
+            {
+                return GetReorderableListHeight(prop) + 2;
+            }
+            else if (IsNestedClass(prop))
+            {
+                float height = EditorGUIUtility.singleLineHeight + 2; // foldout
+                if (prop.isExpanded)
+                {
+                    height += GetChildrenHeight(prop);
+                }
+                return height;
+            }
+            else
+            {
+                return EditorGUI.GetPropertyHeight(prop, true) + 2;
+            }
+        }
+
+        // ============== END HELPER METHODS ==============
 
         public static void ClearCache()
         {
