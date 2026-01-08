@@ -188,16 +188,37 @@ namespace Murtagh.Editor
 
             if (property.isExpanded)
             {
-                // ReorderableList with no header: elements + footer
-                height += 4; // top padding of list box
+                // ReorderableList calculates its height as:
+                // - headerHeight (0 since displayHeader=false, but still has some padding)
+                // - element heights
+                // - footerHeight
 
-                for (int i = 0; i < property.arraySize; i++)
+                // Get the actual list to calculate precise height
+                string key = property.serializedObject.targetObject.GetInstanceID() + "." + property.propertyPath;
+                if (_reorderableLists.TryGetValue(key, out ReorderableList list))
                 {
-                    var element = property.GetArrayElementAtIndex(i);
-                    height += GetElementHeight(element) + 4;
+                    height += list.GetHeight();
                 }
+                else
+                {
+                    // Estimate if list not created yet
+                    height += 7; // top padding
 
-                height += EditorGUIUtility.singleLineHeight + 4; // footer with +/- buttons
+                    if (property.arraySize == 0)
+                    {
+                        height += EditorGUIUtility.singleLineHeight + 2; // empty list placeholder
+                    }
+                    else
+                    {
+                        for (int i = 0; i < property.arraySize; i++)
+                        {
+                            var element = property.GetArrayElementAtIndex(i);
+                            height += GetElementHeight(element) + 4;
+                        }
+                    }
+
+                    height += EditorGUIUtility.singleLineHeight + 4; // footer
+                }
             }
 
             return height;
