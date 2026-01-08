@@ -7,6 +7,7 @@ Attributes that are good to have, but not too extensive, perfect for prototyping
 
 ### Decorator Attributes
 - **InfoBox** - Display info/warning/error messages above fields
+- **HorizontalLine** - Display horizontal lines to separate sections
 
 ### Grouping Attributes
 - **Foldout** - Group fields into collapsible foldout sections
