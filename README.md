@@ -1,6 +1,7 @@
 # Murtagh
 
-Custom inspector attributes for Unity.
+Custom inspector attributes for Unity.<br>
+Attributes that are good to have, but not too extensive, perfect for prototyping or personal projects with low pressure.<br>
 
 ## Features
 
@@ -46,5 +47,6 @@ This project is an open-source project I am developing for fun and learning. If 
 
 ## Credits
 
-Inspired by [NaughtyAttributes by dbrizov](https://github.com/dbrizov/NaughtyAttributes)
+Inspired by [NaughtyAttributes by dbrizov](https://github.com/dbrizov/NaughtyAttributes) <br>
+I noticed this developer made changes a very long time ago and doesnt support attributes for nested lists, so I made some modifications.
   
