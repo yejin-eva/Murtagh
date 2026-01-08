@@ -125,6 +125,81 @@ namespace Murtagh.Editor
             }
         }
 
+        // Rect-based array drawing using ReorderableList.DoList(Rect)
+        private static void DrawArrayInRect(Rect rect, SerializedProperty property)
+        {
+            string key = property.serializedObject.targetObject.GetInstanceID() + "." + property.propertyPath;
+
+            if (!_reorderableLists.TryGetValue(key, out ReorderableList list) || list.serializedProperty.serializedObject != property.serializedObject)
+            {
+                list = new ReorderableList(property.serializedObject, property, true, true, true, true);
+
+                list.drawHeaderCallback = (Rect headerRect) =>
+                {
+                    // Foldout + size field in header (always visible, like top-level)
+                    Rect foldoutRect = new Rect(headerRect.x + 10, headerRect.y, headerRect.width - 65, headerRect.height);
+                    Rect sizeRect = new Rect(headerRect.xMax - 50, headerRect.y, 45, headerRect.height);
+
+                    property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName, true);
+
+                    // Always show size field
+                    EditorGUI.BeginChangeCheck();
+                    int newSize = EditorGUI.DelayedIntField(sizeRect, property.arraySize);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        property.arraySize = newSize;
+                    }
+                };
+
+                list.drawElementCallback = (Rect elemRect, int index, bool isActive, bool isFocused) =>
+                {
+                    if (!property.isExpanded) return;
+
+                    var element = property.GetArrayElementAtIndex(index);
+                    elemRect.x += 10;
+                    elemRect.width -= 10;
+                    elemRect.y += 2;
+
+                    DrawElementInRect(elemRect, element, index);
+                };
+
+                list.elementHeightCallback = (int index) =>
+                {
+                    if (!property.isExpanded) return 0;
+
+                    var element = property.GetArrayElementAtIndex(index);
+                    return GetElementHeight(element) + 4;
+                };
+
+                list.drawFooterCallback = (Rect footerRect) =>
+                {
+                    if (!property.isExpanded) return;
+                    ReorderableList.defaultBehaviours.DrawFooter(footerRect, list);
+                };
+
+                _reorderableLists[key] = list;
+            }
+
+            list.DoList(rect);
+        }
+
+        private static float GetReorderableListHeight(SerializedProperty property)
+        {
+            float height = EditorGUIUtility.singleLineHeight + 4; // header
+
+            if (property.isExpanded)
+            {
+                for (int i = 0; i < property.arraySize; i++)
+                {
+                    var element = property.GetArrayElementAtIndex(i);
+                    height += GetElementHeight(element) + 4;
+                }
+                height += EditorGUIUtility.singleLineHeight + 4; // footer
+            }
+
+            return height;
+        }
+
         private static void DrawChildrenInRect(Rect rect, SerializedProperty parentProperty)
         {
             var children = GetChildProperties(parentProperty);
@@ -152,15 +227,45 @@ namespace Murtagh.Editor
                         validator.GetValidator()?.ValidateProperty(child);
                     }
 
-                    float propHeight = EditorGUI.GetPropertyHeight(child, true);
-                    Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
-
                     using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
                     {
-                        EditorGUI.PropertyField(propRect, child, true);
-                    }
+                        // Nested array - use ReorderableList
+                        if (child.isArray && child.propertyType == SerializedPropertyType.Generic)
+                        {
+                            float arrayHeight = GetReorderableListHeight(child);
+                            Rect arrayRect = new Rect(rect.x, yPos, rect.width, arrayHeight);
+                            DrawArrayInRect(arrayRect, child);
+                            yPos += arrayHeight + 2;
+                        }
+                        // Nested class - recurse
+                        else if (child.hasVisibleChildren && child.propertyType == SerializedPropertyType.Generic)
+                        {
+                            float nestedHeight = EditorGUIUtility.singleLineHeight + 2;
+                            if (child.isExpanded)
+                            {
+                                nestedHeight += GetChildrenHeight(child);
+                            }
 
-                    yPos += propHeight + 2;
+                            Rect foldoutRect = new Rect(rect.x, yPos, rect.width, EditorGUIUtility.singleLineHeight);
+                            child.isExpanded = EditorGUI.Foldout(foldoutRect, child.isExpanded, child.displayName, true);
+                            yPos += EditorGUIUtility.singleLineHeight + 2;
+
+                            if (child.isExpanded)
+                            {
+                                Rect childrenRect = new Rect(rect.x + 15, yPos, rect.width - 15, GetChildrenHeight(child));
+                                DrawChildrenInRect(childrenRect, child);
+                                yPos += GetChildrenHeight(child);
+                            }
+                        }
+                        // Simple property
+                        else
+                        {
+                            float propHeight = EditorGUI.GetPropertyHeight(child, true);
+                            Rect propRect = new Rect(rect.x, yPos, rect.width, propHeight);
+                            EditorGUI.PropertyField(propRect, child, true);
+                            yPos += propHeight + 2;
+                        }
+                    }
                 }
                 else
                 {
@@ -202,15 +307,39 @@ namespace Murtagh.Editor
                                     validator.GetValidator()?.ValidateProperty(prop);
                                 }
 
-                                float propHeight = EditorGUI.GetPropertyHeight(prop, true);
-                                Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
-
                                 using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
                                 {
-                                    EditorGUI.PropertyField(propRect, prop, true);
-                                }
+                                    // Nested array inside foldout
+                                    if (prop.isArray && prop.propertyType == SerializedPropertyType.Generic)
+                                    {
+                                        float arrayHeight = GetReorderableListHeight(prop);
+                                        Rect arrayRect = new Rect(rect.x + 15, yPos, rect.width - 15, arrayHeight);
+                                        DrawArrayInRect(arrayRect, prop);
+                                        yPos += arrayHeight + 2;
+                                    }
+                                    // Nested class inside foldout
+                                    else if (prop.hasVisibleChildren && prop.propertyType == SerializedPropertyType.Generic)
+                                    {
+                                        Rect nestedFoldoutRect = new Rect(rect.x + 15, yPos, rect.width - 15, EditorGUIUtility.singleLineHeight);
+                                        prop.isExpanded = EditorGUI.Foldout(nestedFoldoutRect, prop.isExpanded, prop.displayName, true);
+                                        yPos += EditorGUIUtility.singleLineHeight + 2;
 
-                                yPos += propHeight + 2;
+                                        if (prop.isExpanded)
+                                        {
+                                            Rect childrenRect = new Rect(rect.x + 30, yPos, rect.width - 30, GetChildrenHeight(prop));
+                                            DrawChildrenInRect(childrenRect, prop);
+                                            yPos += GetChildrenHeight(prop);
+                                        }
+                                    }
+                                    // Simple property
+                                    else
+                                    {
+                                        float propHeight = EditorGUI.GetPropertyHeight(prop, true);
+                                        Rect propRect = new Rect(rect.x + 15, yPos, rect.width - 15, propHeight);
+                                        EditorGUI.PropertyField(propRect, prop, true);
+                                        yPos += propHeight + 2;
+                                    }
+                                }
                             }
                         }
                     }
@@ -238,39 +367,81 @@ namespace Murtagh.Editor
         private static float GetChildrenHeight(SerializedProperty parentProperty)
         {
             float height = 0f;
-
             var children = GetChildProperties(parentProperty);
-            
-            // non-foldout properties
-            foreach (var child in children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) == null))
-            {
-                if (!PropertyUtility.IsVisible(child))
-                {
-                    continue;
-                }
-                height += EditorGUI.GetPropertyHeight(child, true) + 2;
-            }
-            
-            // foldout groups
-            var foldoutGroups = children.Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p) != null)
-                .GroupBy(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p).Name);
+            HashSet<string> countedFoldoutGroups = new HashSet<string>();
 
-            foreach (var group in foldoutGroups)
+            foreach (var child in children)
             {
-                var visibleProps = group.Where(p => PropertyUtility.IsVisible(p)).ToList();
-                if (!visibleProps.Any())
-                {
-                    continue;
-                }
+                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
 
-                height += EditorGUIUtility.singleLineHeight + 2; // foldout header
-                
-                string foldoutKey = $"{parentProperty.propertyPath}.{group.Key}";
-                if (_nestedFoldouts.TryGetValue(foldoutKey, out bool isExpanded) && isExpanded)
+                if (foldoutAttr == null)
                 {
-                    foreach (var prop in visibleProps)
+                    if (!PropertyUtility.IsVisible(child))
+                        continue;
+
+                    // Nested array
+                    if (child.isArray && child.propertyType == SerializedPropertyType.Generic)
                     {
-                        height += EditorGUI.GetPropertyHeight(prop, true) + 2;
+                        height += GetReorderableListHeight(child) + 2;
+                    }
+                    // Nested class
+                    else if (child.hasVisibleChildren && child.propertyType == SerializedPropertyType.Generic)
+                    {
+                        height += EditorGUIUtility.singleLineHeight + 2; // foldout
+                        if (child.isExpanded)
+                        {
+                            height += GetChildrenHeight(child);
+                        }
+                    }
+                    // Simple property
+                    else
+                    {
+                        height += EditorGUI.GetPropertyHeight(child, true) + 2;
+                    }
+                }
+                else
+                {
+                    string groupName = foldoutAttr.Name;
+                    if (!countedFoldoutGroups.Contains(groupName))
+                    {
+                        countedFoldoutGroups.Add(groupName);
+
+                        var visibleProps = children
+                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
+                            .Where(p => PropertyUtility.IsVisible(p))
+                            .ToList();
+
+                        if (!visibleProps.Any())
+                            continue;
+
+                        height += EditorGUIUtility.singleLineHeight + 2; // foldout header
+
+                        string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
+                        if (_nestedFoldouts.TryGetValue(foldoutKey, out bool isExpanded) && isExpanded)
+                        {
+                            foreach (var prop in visibleProps)
+                            {
+                                // Nested array inside foldout
+                                if (prop.isArray && prop.propertyType == SerializedPropertyType.Generic)
+                                {
+                                    height += GetReorderableListHeight(prop) + 2;
+                                }
+                                // Nested class inside foldout
+                                else if (prop.hasVisibleChildren && prop.propertyType == SerializedPropertyType.Generic)
+                                {
+                                    height += EditorGUIUtility.singleLineHeight + 2;
+                                    if (prop.isExpanded)
+                                    {
+                                        height += GetChildrenHeight(prop);
+                                    }
+                                }
+                                // Simple property
+                                else
+                                {
+                                    height += EditorGUI.GetPropertyHeight(prop, true) + 2;
+                                }
+                            }
+                        }
                     }
                 }
             }
