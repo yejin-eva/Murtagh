@@ -10,21 +10,121 @@ namespace Murtagh.Editor
     {
         private static Dictionary<string, ReorderableList> _reorderableLists = new Dictionary<string, ReorderableList>();
         private static Dictionary<string, bool> _nestedFoldouts = new();
-        
+
+        // ============== ATTRIBUTE CACHE ==============
+        // Caches reflection results to avoid repeated lookups every frame
+        private static Dictionary<string, FoldoutAttribute> _foldoutAttrCache = new();
+        private static Dictionary<string, ReadOnlyAttribute> _readOnlyAttrCache = new();
+        private static Dictionary<string, ValidatorAttribute[]> _validatorAttrCache = new();
+        private static HashSet<string> _attrCacheChecked = new(); // Track properties we've already looked up
+
+        private static FoldoutAttribute GetCachedFoldoutAttribute(SerializedProperty property)
+        {
+            string key = GetPropertyTypeKey(property);
+
+            if (_foldoutAttrCache.TryGetValue(key, out var cached))
+                return cached;
+
+            if (_attrCacheChecked.Contains(key))
+                return null; // Already checked, no attribute
+
+            _attrCacheChecked.Add(key);
+            var attr = PropertyUtility.GetAttribute<FoldoutAttribute>(property);
+            if (attr != null)
+                _foldoutAttrCache[key] = attr;
+
+            return attr;
+        }
+
+        private static bool GetCachedIsReadOnly(SerializedProperty property)
+        {
+            string key = GetPropertyTypeKey(property);
+
+            if (_readOnlyAttrCache.ContainsKey(key))
+                return true;
+
+            string checkedKey = key + "_ro";
+            if (_attrCacheChecked.Contains(checkedKey))
+                return false;
+
+            _attrCacheChecked.Add(checkedKey);
+            var attr = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property);
+            if (attr != null)
+            {
+                _readOnlyAttrCache[key] = attr;
+                return true;
+            }
+            return false;
+        }
+
+        private static ValidatorAttribute[] GetCachedValidators(SerializedProperty property)
+        {
+            string key = GetPropertyTypeKey(property);
+
+            if (_validatorAttrCache.TryGetValue(key, out var cached))
+                return cached;
+
+            var attrs = PropertyUtility.GetAttributes<ValidatorAttribute>(property);
+            _validatorAttrCache[key] = attrs;
+            return attrs;
+        }
+
+        // Key based on declaring type + property path for stable caching
+        private static string GetPropertyTypeKey(SerializedProperty property)
+        {
+            var targetType = property.serializedObject.targetObject.GetType();
+            return $"{targetType.FullName}.{property.propertyPath}";
+        }
+
+        /// <summary>
+        /// Pre-processes children into foldout groups to avoid repeated LINQ queries.
+        /// Returns a tuple of (non-grouped properties, dictionary of group name -> properties).
+        /// </summary>
+        private static (List<SerializedProperty> nonGrouped, Dictionary<string, List<SerializedProperty>> groups, List<string> groupOrder)
+            GetChildrenGrouped(List<SerializedProperty> children)
+        {
+            var nonGrouped = new List<SerializedProperty>();
+            var groups = new Dictionary<string, List<SerializedProperty>>();
+            var groupOrder = new List<string>(); // Preserve order of first appearance
+
+            foreach (var child in children)
+            {
+                var foldoutAttr = GetCachedFoldoutAttribute(child);
+                if (foldoutAttr == null)
+                {
+                    nonGrouped.Add(child);
+                }
+                else
+                {
+                    string groupName = foldoutAttr.Name;
+                    if (!groups.TryGetValue(groupName, out var list))
+                    {
+                        list = new List<SerializedProperty>();
+                        groups[groupName] = list;
+                        groupOrder.Add(groupName);
+                    }
+                    list.Add(child);
+                }
+            }
+
+            return (nonGrouped, groups, groupOrder);
+        }
+        // ============== END ATTRIBUTE CACHE ==============
+
         public static void PropertyField_Layout(SerializedProperty property, bool includeChildren)
         {
             // Check if visible
             if (!PropertyUtility.IsVisible(property))
                 return;
-           
+
             // validate
-            ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(property);
+            ValidatorAttribute[] validators = GetCachedValidators(property);
             foreach (var validator in validators)
             {
                 validator.GetValidator()?.ValidateProperty(property);
             }
-            
-            bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(property) != null;
+
+            bool isReadOnly = GetCachedIsReadOnly(property);
             bool isEnabled = PropertyUtility.IsEnabled(property);
             using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
             {
@@ -227,12 +327,13 @@ namespace Murtagh.Editor
         private static void DrawChildrenInRect(Rect rect, SerializedProperty parentProperty)
         {
             var children = GetChildProperties(parentProperty);
+            var (nonGrouped, groups, groupOrder) = GetChildrenGrouped(children);
             float yPos = rect.y;
             HashSet<string> drawnFoldoutGroups = new HashSet<string>();
 
             foreach (var child in children)
             {
-                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
+                var foldoutAttr = GetCachedFoldoutAttribute(child);
 
                 if (foldoutAttr == null)
                 {
@@ -251,12 +352,10 @@ namespace Murtagh.Editor
 
                     drawnFoldoutGroups.Add(groupName);
 
-                    var groupProps = children
-                        .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
-                        .Where(p => PropertyUtility.IsVisible(p))
-                        .ToList();
+                    // Use pre-computed group, filter only by visibility
+                    var groupProps = groups[groupName].Where(p => PropertyUtility.IsVisible(p)).ToList();
 
-                    if (!groupProps.Any())
+                    if (groupProps.Count == 0)
                         continue;
 
                     // Draw foldout header
@@ -286,11 +385,11 @@ namespace Murtagh.Editor
         /// </summary>
         private static float DrawPropertyWithAttributes(Rect rect, SerializedProperty prop, float yPos, float indent)
         {
-            bool isReadOnly = PropertyUtility.GetAttribute<ReadOnlyAttribute>(prop) != null;
+            bool isReadOnly = GetCachedIsReadOnly(prop);
             bool isEnabled = PropertyUtility.IsEnabled(prop);
 
             // Run validators
-            ValidatorAttribute[] validators = PropertyUtility.GetAttributes<ValidatorAttribute>(prop);
+            ValidatorAttribute[] validators = GetCachedValidators(prop);
             foreach (var validator in validators)
             {
                 validator.GetValidator()?.ValidateProperty(prop);
@@ -323,11 +422,12 @@ namespace Murtagh.Editor
         {
             float height = 0f;
             var children = GetChildProperties(parentProperty);
+            var (nonGrouped, groups, groupOrder) = GetChildrenGrouped(children);
             HashSet<string> countedFoldoutGroups = new HashSet<string>();
 
             foreach (var child in children)
             {
-                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
+                var foldoutAttr = GetCachedFoldoutAttribute(child);
 
                 if (foldoutAttr == null)
                 {
@@ -344,12 +444,10 @@ namespace Murtagh.Editor
 
                     countedFoldoutGroups.Add(groupName);
 
-                    var visibleProps = children
-                        .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
-                        .Where(p => PropertyUtility.IsVisible(p))
-                        .ToList();
+                    // Use pre-computed group, filter only by visibility
+                    var visibleProps = groups[groupName].Where(p => PropertyUtility.IsVisible(p)).ToList();
 
-                    if (!visibleProps.Any())
+                    if (visibleProps.Count == 0)
                         continue;
 
                     height += EditorGUIUtility.singleLineHeight + 2; // foldout header
@@ -413,11 +511,12 @@ namespace Murtagh.Editor
         private static void DrawChildren(SerializedProperty parentProperty)
         {
             var children = GetChildProperties(parentProperty);
+            var (nonGrouped, groups, groupOrder) = GetChildrenGrouped(children);
             HashSet<string> drawnFoldoutGroups = new HashSet<string>();
 
             foreach (var child in children)
             {
-                var foldoutAttr = PropertyUtility.GetAttribute<FoldoutAttribute>(child);
+                var foldoutAttr = GetCachedFoldoutAttribute(child);
 
                 if (foldoutAttr == null)
                 {
@@ -436,12 +535,10 @@ namespace Murtagh.Editor
                     {
                         drawnFoldoutGroups.Add(groupName);
 
-                        var groupProps = children
-                            .Where(p => PropertyUtility.GetAttribute<FoldoutAttribute>(p)?.Name == groupName)
-                            .Where(p => PropertyUtility.IsVisible(p))
-                            .ToList();
+                        // Use pre-computed group, filter only by visibility
+                        var groupProps = groups[groupName].Where(p => PropertyUtility.IsVisible(p)).ToList();
 
-                        if (!groupProps.Any())
+                        if (groupProps.Count == 0)
                             continue;
 
                         string foldoutKey = $"{parentProperty.propertyPath}.{groupName}";
@@ -563,6 +660,10 @@ namespace Murtagh.Editor
         {
             _reorderableLists.Clear();
             _nestedFoldouts.Clear();
+            _foldoutAttrCache.Clear();
+            _readOnlyAttrCache.Clear();
+            _validatorAttrCache.Clear();
+            _attrCacheChecked.Clear();
         }
         
         private static void DebugLogMessage(string message, MessageType type, UnityEngine.Object context)
