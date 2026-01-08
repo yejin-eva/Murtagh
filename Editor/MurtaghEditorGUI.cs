@@ -126,35 +126,41 @@ namespace Murtagh.Editor
         }
 
         // Rect-based array drawing using ReorderableList.DoList(Rect)
+        // Matches top-level structure: foldout+size outside, box only around elements
         private static void DrawArrayInRect(Rect rect, SerializedProperty property)
         {
+            float lineHeight = EditorGUIUtility.singleLineHeight;
+
+            // Draw foldout + size field OUTSIDE the box (like top-level)
+            Rect foldoutRect = new Rect(rect.x, rect.y, rect.width - 60, lineHeight);
+            Rect sizeRect = new Rect(rect.xMax - 55, rect.y, 55, lineHeight);
+
+            property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName, true);
+
+            EditorGUI.BeginChangeCheck();
+            int newSize = EditorGUI.DelayedIntField(sizeRect, property.arraySize);
+            if (EditorGUI.EndChangeCheck())
+            {
+                property.arraySize = newSize;
+            }
+
+            if (!property.isExpanded)
+                return;
+
+            // Calculate rect for the list (below the foldout)
+            float listY = rect.y + lineHeight + 2;
+            float listHeight = rect.height - lineHeight - 2;
+            Rect listRect = new Rect(rect.x, listY, rect.width, listHeight);
+
             string key = property.serializedObject.targetObject.GetInstanceID() + "." + property.propertyPath;
 
             if (!_reorderableLists.TryGetValue(key, out ReorderableList list) || list.serializedProperty.serializedObject != property.serializedObject)
             {
-                list = new ReorderableList(property.serializedObject, property, true, true, true, true);
-
-                list.drawHeaderCallback = (Rect headerRect) =>
-                {
-                    // Foldout + size field in header (always visible, like top-level)
-                    Rect foldoutRect = new Rect(headerRect.x + 10, headerRect.y, headerRect.width - 65, headerRect.height);
-                    Rect sizeRect = new Rect(headerRect.xMax - 50, headerRect.y, 45, headerRect.height);
-
-                    property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName, true);
-
-                    // Always show size field
-                    EditorGUI.BeginChangeCheck();
-                    int newSize = EditorGUI.DelayedIntField(sizeRect, property.arraySize);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        property.arraySize = newSize;
-                    }
-                };
+                // displayHeader = false - no header, just elements box
+                list = new ReorderableList(property.serializedObject, property, true, false, true, true);
 
                 list.drawElementCallback = (Rect elemRect, int index, bool isActive, bool isFocused) =>
                 {
-                    if (!property.isExpanded) return;
-
                     var element = property.GetArrayElementAtIndex(index);
                     elemRect.x += 10;
                     elemRect.width -= 10;
@@ -165,36 +171,33 @@ namespace Murtagh.Editor
 
                 list.elementHeightCallback = (int index) =>
                 {
-                    if (!property.isExpanded) return 0;
-
                     var element = property.GetArrayElementAtIndex(index);
                     return GetElementHeight(element) + 4;
-                };
-
-                list.drawFooterCallback = (Rect footerRect) =>
-                {
-                    if (!property.isExpanded) return;
-                    ReorderableList.defaultBehaviours.DrawFooter(footerRect, list);
                 };
 
                 _reorderableLists[key] = list;
             }
 
-            list.DoList(rect);
+            list.DoList(listRect);
         }
 
         private static float GetReorderableListHeight(SerializedProperty property)
         {
-            float height = EditorGUIUtility.singleLineHeight + 4; // header
+            // Foldout + size field (always visible, outside box)
+            float height = EditorGUIUtility.singleLineHeight + 2;
 
             if (property.isExpanded)
             {
+                // ReorderableList with no header: elements + footer
+                height += 4; // top padding of list box
+
                 for (int i = 0; i < property.arraySize; i++)
                 {
                     var element = property.GetArrayElementAtIndex(i);
                     height += GetElementHeight(element) + 4;
                 }
-                height += EditorGUIUtility.singleLineHeight + 4; // footer
+
+                height += EditorGUIUtility.singleLineHeight + 4; // footer with +/- buttons
             }
 
             return height;
