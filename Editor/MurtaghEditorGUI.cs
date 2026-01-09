@@ -117,11 +117,15 @@ namespace Murtagh.Editor
             if (!PropertyUtility.IsVisible(property))
                 return;
 
-            // validate
+            // Run validators and collect results
             ValidatorAttribute[] validators = GetCachedValidators(property);
             foreach (var validator in validators)
             {
-                validator.GetValidator()?.ValidateProperty(property);
+                var result = validator.GetValidator()?.ValidateProperty(property);
+                if (result.HasValue)
+                {
+                    HelpBox_Layout(result.Value.Message, result.Value.Type, property.serializedObject.targetObject);
+                }
             }
 
             bool isReadOnly = GetCachedIsReadOnly(property);
@@ -385,20 +389,41 @@ namespace Murtagh.Editor
         /// </summary>
         private static float DrawPropertyWithAttributes(Rect rect, SerializedProperty prop, float yPos, float indent)
         {
+            float startY = yPos;
             bool isReadOnly = GetCachedIsReadOnly(prop);
             bool isEnabled = PropertyUtility.IsEnabled(prop);
 
-            // Run validators
+            // Run validators and draw results with Rect-based API
             ValidatorAttribute[] validators = GetCachedValidators(prop);
             foreach (var validator in validators)
             {
-                validator.GetValidator()?.ValidateProperty(prop);
+                var result = validator.GetValidator()?.ValidateProperty(prop);
+                if (result.HasValue)
+                {
+                    float helpBoxHeight = GetHelpBoxHeight(result.Value.Message);
+                    Rect helpBoxRect = new Rect(rect.x + indent, yPos, rect.width - indent, helpBoxHeight);
+                    HelpBox(helpBoxRect, result.Value.Message, result.Value.Type, prop.serializedObject.targetObject);
+                    yPos += helpBoxHeight + 2;
+                }
             }
 
             using (new EditorGUI.DisabledScope(!isEnabled || isReadOnly))
             {
-                return DrawPropertyInRect(rect, prop, yPos, indent);
+                yPos += DrawPropertyInRect(rect, prop, yPos, indent);
             }
+
+            return yPos - startY;
+        }
+
+        /// <summary>
+        /// Gets the height of a HelpBox for a given message.
+        /// </summary>
+        private static float GetHelpBoxHeight(string message)
+        {
+            var style = GUI.skin.GetStyle("helpbox");
+            float minHeight = 40f;
+            float calculatedHeight = style.CalcHeight(new GUIContent(message), EditorGUIUtility.currentViewWidth - 40);
+            return Mathf.Max(minHeight, calculatedHeight);
         }
 
         private static float GetElementHeight(SerializedProperty element)
@@ -637,27 +662,50 @@ namespace Murtagh.Editor
         }
 
         /// <summary>
-        /// Gets the height of a single property (array, nested class, or simple).
+        /// Gets the height of a single property (array, nested class, or simple), including validation messages.
         /// </summary>
         private static float GetPropertyHeightInRect(SerializedProperty prop)
         {
+            float height = GetValidationHeight(prop);
+
             if (IsArray(prop))
             {
-                return GetReorderableListHeight(prop) + 2;
+                height += GetReorderableListHeight(prop) + 2;
             }
             else if (IsNestedClass(prop))
             {
-                float height = EditorGUIUtility.singleLineHeight + 2; // foldout
+                height += EditorGUIUtility.singleLineHeight + 2; // foldout
                 if (prop.isExpanded)
                 {
                     height += GetChildrenHeight(prop);
                 }
-                return height;
             }
             else
             {
-                return EditorGUI.GetPropertyHeight(prop, true) + 2;
+                height += EditorGUI.GetPropertyHeight(prop, true) + 2;
             }
+
+            return height;
+        }
+
+        /// <summary>
+        /// Gets the total height of all validation messages for a property.
+        /// </summary>
+        private static float GetValidationHeight(SerializedProperty prop)
+        {
+            float height = 0f;
+            ValidatorAttribute[] validators = GetCachedValidators(prop);
+
+            foreach (var validator in validators)
+            {
+                var result = validator.GetValidator()?.ValidateProperty(prop);
+                if (result.HasValue)
+                {
+                    height += GetHelpBoxHeight(result.Value.Message) + 2;
+                }
+            }
+
+            return height;
         }
 
         // ============== END HELPER METHODS ==============

@@ -6,7 +6,7 @@ namespace Murtagh.Editor
 {
     public class ValidateInputPropertyValidator : PropertyValidatorBase
     {
-        public override void ValidateProperty(SerializedProperty property)
+        public override ValidationResult? ValidateProperty(SerializedProperty property)
         {
             ValidateInputAttribute validateInputAttribute =
                 PropertyUtility.GetAttribute<ValidateInputAttribute>(property);
@@ -16,7 +16,7 @@ namespace Murtagh.Editor
 
             if (validationCallback == null || validationCallback.ReturnType != typeof(bool))
             {
-                return;
+                return null;
             }
 
             ParameterInfo[] callbackParameters = validationCallback.GetParameters();
@@ -25,14 +25,10 @@ namespace Murtagh.Editor
             {
                 if (!(bool)validationCallback.Invoke(target, null))
                 {
-                    if (string.IsNullOrEmpty(validateInputAttribute.Message))
-                    {
-                        MurtaghEditorGUI.HelpBox_Layout(property.name + " is not valid.", MessageType.Error, context: property.serializedObject.targetObject);
-                    }
-                    else
-                    {
-                        MurtaghEditorGUI.HelpBox_Layout(validateInputAttribute.Message, MessageType.Error, context: property.serializedObject.targetObject);
-                    }
+                    string message = string.IsNullOrEmpty(validateInputAttribute.Message)
+                        ? property.name + " is not valid."
+                        : validateInputAttribute.Message;
+                    return new ValidationResult(message, MessageType.Error);
                 }
             }
             else if (callbackParameters.Length == 1)
@@ -45,29 +41,25 @@ namespace Murtagh.Editor
                 {
                     if (!(bool)validationCallback.Invoke(target, new object[] { fieldInfo.GetValue(target) }))
                     {
-                        if (string.IsNullOrEmpty(validateInputAttribute.Message))
-                        {
-                            MurtaghEditorGUI.HelpBox_Layout(property.name + " is not valid.", MessageType.Error, context: property.serializedObject.targetObject);
-                        }
-                        else
-                        {
-                            MurtaghEditorGUI.HelpBox_Layout(validateInputAttribute.Message, MessageType.Error, context: property.serializedObject.targetObject);
-                        }
+                        string message = string.IsNullOrEmpty(validateInputAttribute.Message)
+                            ? property.name + " is not valid."
+                            : validateInputAttribute.Message;
+                        return new ValidationResult(message, MessageType.Error);
                     }
                 }
                 else
                 {
-                    string warning = "Field type not same as callback parameter type";
-                    MurtaghEditorGUI.HelpBox_Layout(warning, MessageType.Warning, context: property.serializedObject.targetObject);
+                    return new ValidationResult("Field type not same as callback parameter type", MessageType.Warning);
                 }
             }
             else
             {
                 string warning = validateInputAttribute.GetType().Name +
                                  " needs callback with bool return type and optional single parameter of same type as field";
-                
-                MurtaghEditorGUI.HelpBox_Layout(warning, MessageType.Warning, context: property.serializedObject.targetObject);
+                return new ValidationResult(warning, MessageType.Warning);
             }
+
+            return null;
         }
     }
 }

@@ -4,9 +4,27 @@ using UnityEditor;
 
 namespace Murtagh.Editor
 {
+    /// <summary>
+    /// Holds the result of a validation check.
+    /// </summary>
+    public struct ValidationResult
+    {
+        public string Message;
+        public MessageType Type;
+
+        public ValidationResult(string message, MessageType type = MessageType.Error)
+        {
+            Message = message;
+            Type = type;
+        }
+    }
+
     public abstract class PropertyValidatorBase
     {
-        public abstract void ValidateProperty(SerializedProperty property);
+        /// <summary>
+        /// Validates a property and returns a result if invalid, null if valid.
+        /// </summary>
+        public abstract ValidationResult? ValidateProperty(SerializedProperty property);
     }
 
     public static class ValidatorAttributeExtensions

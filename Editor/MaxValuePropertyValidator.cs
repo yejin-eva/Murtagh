@@ -5,7 +5,7 @@ namespace Murtagh.Editor
 {
     public class MaxValuePropertyValidator : PropertyValidatorBase
     {
-        public override void ValidateProperty(SerializedProperty property)
+        public override ValidationResult? ValidateProperty(SerializedProperty property)
         {
             MaxValueAttribute maxValueAttribute = PropertyUtility.GetAttribute<MaxValueAttribute>(property);
 
@@ -46,8 +46,10 @@ namespace Murtagh.Editor
             else
             {
                 string warning = maxValueAttribute.GetType().Name + " can be used only on int, float, Vector or VectorInt fields";
-                Debug.LogWarning(warning, property.serializedObject.targetObject);
+                return new ValidationResult(warning, MessageType.Warning);
             }
+
+            return null;
         }
     }
 }

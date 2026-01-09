@@ -4,7 +4,7 @@ namespace Murtagh.Editor
 {
     public class RequiredPropertyValidator : PropertyValidatorBase
     {
-        public override void ValidateProperty(SerializedProperty property)
+        public override ValidationResult? ValidateProperty(SerializedProperty property)
         {
             RequiredAttribute requiredAttribute = PropertyUtility.GetAttribute<RequiredAttribute>(property);
 
@@ -17,16 +17,17 @@ namespace Murtagh.Editor
                     {
                         errorMessage = requiredAttribute.Message;
                     }
-                    
-                    MurtaghEditorGUI.HelpBox_Layout(errorMessage, MessageType.Error, context: property.serializedObject.targetObject);
+
+                    return new ValidationResult(errorMessage, MessageType.Error);
                 }
             }
             else
             {
                 string warning = requiredAttribute.GetType().Name + " works only on reference types.";
-                MurtaghEditorGUI.HelpBox_Layout(warning, MessageType.Warning,
-                    context: property.serializedObject.targetObject);
+                return new ValidationResult(warning, MessageType.Warning);
             }
+
+            return null;
         }
     }
 }
