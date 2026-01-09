@@ -10,12 +10,14 @@ namespace Murtagh
             Inverted = true;
         }
 
-        public DisableIfAttribute(EConditionOperator conditionOperator, params string[] conditions) : base(conditionOperator, conditions)
+        public DisableIfAttribute(EConditionOperator conditionOperator, params string[] conditions) 
+            : base(conditionOperator, conditions)
         {
             Inverted = true;
         }
 
-        public DisableIfAttribute(string enumName, Enum enumValue) : base(enumName, enumValue)
+        public DisableIfAttribute(string enumName, object enumValue) 
+            : base(enumName, enumValue as Enum)
         {
             Inverted = true;
         }
