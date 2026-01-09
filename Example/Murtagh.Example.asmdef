@@ -1,0 +1,6 @@
+{
+  "name": "Murtagh.Example",
+  "references": [
+    "Murtagh.Runtime"
+  ]
+}

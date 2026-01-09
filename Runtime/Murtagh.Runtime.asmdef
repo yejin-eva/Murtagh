@@ -1,5 +1,5 @@
 {
-    "name": "Murtagh",
+    "name": "Murtagh.Runtime",
     "rootNamespace": "Murtagh",
     "references": [],
     "includePlatforms": [],

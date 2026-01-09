@@ -2,7 +2,7 @@
     "name": "Murtagh.Editor",
     "rootNamespace": "Murtagh.Editor",
     "references": [
-        "Murtagh"
+        "Murtagh.Runtime"
     ],
     "includePlatforms": [
         "Editor"
