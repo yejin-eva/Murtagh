@@ -6,6 +6,8 @@ namespace Murtagh.Example
 {
     public class Example : MonoBehaviour
     {
+        public NestedExample NestedExample;
+        
         public List<NestedExample> NestedExamples;
         
 #region Decorator Attributes
