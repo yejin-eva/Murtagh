@@ -763,6 +763,45 @@ namespace Murtagh.Editor
                     yPos += childrenHeight;
                 }
             }
+            else if (prop.propertyType == SerializedPropertyType.ManagedReference)
+            {
+                float lineHeight = EditorGUIUtility.singleLineHeight;
+
+                // Type selector popup
+                var baseType = GetManagedReferenceFieldType(prop);
+                var concreteTypes = baseType != null ? GetConcreteTypes(baseType) : new List<Type>();
+                var typeNames = new List<string> { "(None)" };
+                typeNames.AddRange(concreteTypes.Select(t => t.Name));
+
+                int currentIndex = 0;
+                if (prop.managedReferenceValue != null)
+                {
+                    var currentType = prop.managedReferenceValue.GetType();
+                    int found = concreteTypes.IndexOf(currentType);
+                    if (found >= 0) currentIndex = found + 1;
+                }
+
+                Rect popupRect = new Rect(rect.x + indent, yPos, rect.width - indent, lineHeight);
+                int newIndex = EditorGUI.Popup(popupRect, prop.displayName, currentIndex, typeNames.ToArray());
+
+                if (newIndex != currentIndex)
+                {
+                    prop.managedReferenceValue = newIndex == 0
+                        ? null
+                        : Activator.CreateInstance(concreteTypes[newIndex - 1]);
+                }
+
+                yPos += lineHeight + 2;
+
+                // Draw children if type is assigned
+                if (prop.managedReferenceValue != null && prop.hasVisibleChildren)
+                {
+                    float childrenHeight = GetChildrenHeight(prop);
+                    Rect childrenRect = new Rect(rect.x + indent + 15, yPos, rect.width - indent - 15, childrenHeight);
+                    DrawChildrenInRect(childrenRect, prop);
+                    yPos += childrenHeight;
+                }
+            }
             else
             {
                 float propHeight = EditorGUI.GetPropertyHeight(prop, true);
@@ -789,6 +828,14 @@ namespace Murtagh.Editor
             {
                 height += EditorGUIUtility.singleLineHeight + 2; // foldout
                 if (prop.isExpanded)
+                {
+                    height += GetChildrenHeight(prop);
+                }
+            }
+            else if (prop.propertyType == SerializedPropertyType.ManagedReference)
+            {
+                height += EditorGUIUtility.singleLineHeight + 2; // type popup
+                if (prop.managedReferenceValue != null && prop.hasVisibleChildren)
                 {
                     height += GetChildrenHeight(prop);
                 }
