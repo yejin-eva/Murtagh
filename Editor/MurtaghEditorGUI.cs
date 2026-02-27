@@ -1,3 +1,4 @@
+using System;
 using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
@@ -146,6 +147,12 @@ namespace Murtagh.Editor
                     return;
                 }
 
+                if (property.propertyType == SerializedPropertyType.ManagedReference)
+                {
+                    DrawManagedReferenceField(property);
+                    return;
+                }
+
                 // Default Unity drawer for everything else
                 EditorGUILayout.PropertyField(property, new GUIContent(property.displayName), includeChildren);
             }
@@ -200,8 +207,102 @@ namespace Murtagh.Editor
             list.DoLayoutList();
         }
 
+        private static void DrawManagedReferenceField(SerializedProperty property)
+        {
+            var baseType = GetManagedReferenceFieldType(property);
+            var concreteTypes = baseType != null ? GetConcreteTypes(baseType) : new List<Type>();
+
+            var typeNames = new List<string> { "(None)" };
+            typeNames.AddRange(concreteTypes.Select(t => t.Name));
+
+            int currentIndex = 0;
+            if (property.managedReferenceValue != null)
+            {
+                var currentType = property.managedReferenceValue.GetType();
+                int found = concreteTypes.IndexOf(currentType);
+                if (found >= 0)
+                {
+                    currentIndex = found + 1;
+                }
+            }
+
+            int newIndex = EditorGUILayout.Popup(property.displayName, currentIndex, typeNames.ToArray());
+
+            if (newIndex != currentIndex)
+            {
+                if (newIndex == 0)
+                {
+                    property.managedReferenceValue = null;
+                }
+                else
+                {
+                    property.managedReferenceValue = Activator.CreateInstance(concreteTypes[newIndex - 1]);
+                }
+            }
+
+            if (property.managedReferenceValue != null && property.hasVisibleChildren)
+            {
+                EditorGUI.indentLevel++;
+                DrawChildren(property);
+                EditorGUI.indentLevel--;
+            }
+        }
+
+        private static void DrawManagedReferenceElement(Rect rect, SerializedProperty element, int index)
+        {
+            float lineHeight = EditorGUIUtility.singleLineHeight;
+            
+            // Row 1: type selector popup
+            var baseType = GetManagedReferenceFieldType(element);
+            var concreteTypes = baseType != null ? GetConcreteTypes(baseType) : new List<Type>();
+
+            var typeNames = new List<string> { "(None)" };
+            typeNames.AddRange(concreteTypes.Select(t => t.Name));
+            
+            // Find current selection index
+            int currentIndex = 0;
+            if (element.managedReferenceValue != null)
+            {
+                var currentType = element.managedReferenceValue.GetType();
+                int found = concreteTypes.IndexOf(currentType);
+                if (found >= 0)
+                {
+                    currentIndex = found + 1; // +1 because of "(None)" at index 0
+                }
+            }
+            
+            Rect popupRect = new Rect(rect.x, rect.y, rect.width, lineHeight);
+            int newIndex = EditorGUI.Popup(popupRect, currentIndex, typeNames.ToArray());
+
+            if (newIndex != currentIndex)
+            {
+                if (newIndex == 0)
+                {
+                    element.managedReferenceValue = null;
+                }
+                else
+                {
+                    element.managedReferenceValue = Activator.CreateInstance(concreteTypes[newIndex - 1]);
+                }
+            }
+            
+            // Row 2+: Draw children if type is assigned
+            if (element.managedReferenceValue != null && element.hasVisibleChildren)
+            {
+                float yOffset = lineHeight + 2;
+                Rect childrenRect = new Rect(rect.x + 15, rect.y + yOffset, rect.width - 15, rect.height - yOffset);
+                DrawChildrenInRect(childrenRect, element);
+            }
+        }
+
         private static void DrawElementInRect(Rect rect, SerializedProperty element, int index)
         {
+            if (element.propertyType == SerializedPropertyType.ManagedReference)
+            {
+                DrawManagedReferenceElement(rect, element, index);
+                return;
+            }
+            
             if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
             {
                 // Nested class element: draw foldout header then children
@@ -428,6 +529,18 @@ namespace Murtagh.Editor
 
         private static float GetElementHeight(SerializedProperty element)
         {
+            if (element.propertyType == SerializedPropertyType.ManagedReference)
+            {
+                float height = EditorGUIUtility.singleLineHeight; // type popup
+
+                if (element.managedReferenceValue != null && element.hasVisibleChildren)
+                {
+                    height += 2 + GetChildrenHeight(element);
+                }
+                
+                return height;
+            }
+            
             if (element.hasVisibleChildren && element.propertyType == SerializedPropertyType.Generic)
             {
                 float height = EditorGUIUtility.singleLineHeight; // foldout header
@@ -706,6 +819,44 @@ namespace Murtagh.Editor
             }
 
             return height;
+        }
+
+        /// <summary>
+        /// Gets managed reference field type name in "AssemblyName TypeFullName" format
+        /// </summary>
+        /// <param name="property">property type</param>
+        /// <returns></returns>
+        private static Type GetManagedReferenceFieldType(SerializedProperty property)
+        {
+            var typeName = property.managedReferenceFieldTypename;
+
+            if (string.IsNullOrEmpty(typeName))
+            {
+                return null;
+            }
+            
+            var parts = typeName.Split(' ');
+            if (parts.Length != 2)
+            {
+                return null;
+            }
+
+            var assemblyName = parts[0];
+            var fullTypeName = parts[1];
+            return Type.GetType($"{fullTypeName}, {assemblyName}");
+        }
+
+        /// <summary>
+        /// Returns list of concrete types
+        /// </summary>
+        /// <param name="baseType"></param>
+        /// <returns></returns>
+        private static List<Type> GetConcreteTypes(Type baseType)
+        {
+            return TypeCache.GetTypesDerivedFrom(baseType)
+                .Where(t => !t.IsAbstract && !t.IsInterface && t.GetConstructor(Type.EmptyTypes) != null)
+                .OrderBy(t => t.Name)
+                .ToList();
         }
 
         // ============== END HELPER METHODS ==============

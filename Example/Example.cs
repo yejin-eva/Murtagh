@@ -271,6 +271,51 @@ namespace Murtagh.Example
             return value != 0;
         }
 #endregion
+
+
+        public interface IExampleAction
+        {
+            void Execute();
+        }
+
+        [Serializable]
+        public class ActionA : IExampleAction
+        {
+            public float Damage;
+            public bool IsCritical;
+
+            public void Execute()
+            {
+            }
+        }
+
+        [Serializable]
+        public class ActionB : IExampleAction
+        {
+            public string EffectName;
+            public int Duration;
+
+            public void Execute()
+            {
+            }
+        }
+
+        [Serializable]
+        public class ActionC : IExampleAction
+        {
+            public Vector2 Direction;
+            public float Force;
+
+            public void Execute()
+            {
+            }
+        }
+
+        [SerializeReference, SubclassSelector]
+        public IExampleAction SubclassSelectorExample;
+        
+        [SerializeReference, SubclassSelector]
+        public List<IExampleAction> SubclassSelectorListExample = new();
     }
     
     public enum IfEnum
@@ -361,6 +406,12 @@ namespace Murtagh.Example
         // validateinput example
         [ValidateInput("NotZeroValidator")]
         public int ValidateInputExample;
+        
+        [SerializeReference, SubclassSelector]
+        public Example.IExampleAction SubclassSelectorExample;
+        
+        [SerializeReference, SubclassSelector]
+        public List<Example.IExampleAction> SubclassSelectorListExample = new();
         
         private bool NotZeroValidator(int value)
         {
